@@ -11,7 +11,7 @@
  * Builder for UUEMCPServerSimpleTool
  */
 UCLASS()
-class UEMCPSERVER_API UUEMCPServerSimpleToolBuilder : public UInteractiveToolBuilder
+class UEMCPSERVERLIVECODING_API UUEMCPServerSimpleToolBuilder : public UInteractiveToolBuilder
 {
 	GENERATED_BODY()
 
@@ -27,7 +27,7 @@ public:
  * which provides an OnModified delegate that the Tool will listen to for changes in property values.
  */
 UCLASS(Transient)
-class UEMCPSERVER_API UUEMCPServerSimpleToolProperties : public UInteractiveToolPropertySet
+class UEMCPSERVERLIVECODING_API UUEMCPServerSimpleToolProperties : public UInteractiveToolPropertySet
 {
 	GENERATED_BODY()
 public:
@@ -46,7 +46,7 @@ public:
  * clicks left mouse button. All the action is in the ::OnClicked handler.
  */
 UCLASS()
-class UEMCPSERVER_API UUEMCPServerSimpleTool : public USingleClickTool
+class UEMCPSERVERLIVECODING_API UUEMCPServerSimpleTool : public USingleClickTool
 {
 	GENERATED_BODY()
 

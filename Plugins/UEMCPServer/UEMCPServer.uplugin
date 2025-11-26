@@ -16,7 +16,7 @@
 	"Installed": false,
 	"Modules": [
 		{
-			"Name": "UEMCPServer",
+			"Name": "UEMCPServerLiveCoding",
 			"Type": "Editor",
 			"LoadingPhase": "Default"
 		}

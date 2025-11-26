@@ -2,9 +2,9 @@
 
 using UnrealBuildTool;
 
-public class UEMCPServer : ModuleRules
+public class UEMCPServerLiveCoding : ModuleRules
 {
-    public UEMCPServer(ReadOnlyTargetRules Target) : base(Target)
+    public UEMCPServerLiveCoding(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
 

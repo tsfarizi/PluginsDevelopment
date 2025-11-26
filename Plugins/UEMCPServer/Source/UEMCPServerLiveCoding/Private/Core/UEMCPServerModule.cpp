@@ -121,4 +121,4 @@ void FUEMCPServerModule::StopMcpServer()
     }
 }
 
-IMPLEMENT_MODULE(FUEMCPServerModule, UEMCPServer)
+IMPLEMENT_MODULE(FUEMCPServerModule, UEMCPServerLiveCoding)

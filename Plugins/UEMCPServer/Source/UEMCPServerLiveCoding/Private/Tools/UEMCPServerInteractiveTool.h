@@ -11,7 +11,7 @@
  * Builder for UUEMCPServerInteractiveTool
  */
 UCLASS()
-class UEMCPSERVER_API UUEMCPServerInteractiveToolBuilder : public UInteractiveToolBuilder
+class UEMCPSERVERLIVECODING_API UUEMCPServerInteractiveToolBuilder : public UInteractiveToolBuilder
 {
 	GENERATED_BODY()
 
@@ -25,7 +25,7 @@ public:
  * Property set for the UUEMCPServerInteractiveTool
  */
 UCLASS(Transient)
-class UEMCPSERVER_API UUEMCPServerInteractiveToolProperties : public UInteractiveToolPropertySet
+class UEMCPSERVERLIVECODING_API UUEMCPServerInteractiveToolProperties : public UInteractiveToolPropertySet
 {
 	GENERATED_BODY()
 
@@ -53,7 +53,7 @@ public:
  * the second point is set by shift-click-dragging the mouse.
  */
 UCLASS()
-class UEMCPSERVER_API UUEMCPServerInteractiveTool : public UInteractiveTool, public IClickDragBehaviorTarget
+class UEMCPSERVERLIVECODING_API UUEMCPServerInteractiveTool : public UInteractiveTool, public IClickDragBehaviorTarget
 {
 	GENERATED_BODY()
 
