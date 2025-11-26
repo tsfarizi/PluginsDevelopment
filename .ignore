@@ -1,4 +1,12 @@
+/.agent
+/.antigravity
+/.gemini
+/.git
 /.vscode
 /Content
+/DerivedDataCache
 /Intermediate
 /Saved
+/Plugins/SimulationCameraControl/Content
+/Plugins/SimulationCameraControl/Intermediate
+/Plugins/UEMCPServer/Intermediate
