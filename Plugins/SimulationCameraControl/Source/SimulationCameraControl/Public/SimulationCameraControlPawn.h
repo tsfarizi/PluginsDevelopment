@@ -3,30 +3,26 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Pawn.h"
 #include "UObject/SoftObjectPath.h"
-
-#include "CameraPawn.generated.h"
+#include "SimulationCameraControlPawn.generated.h"
 
 class UCameraComponent;
+class USpringArmComponent;
+class USceneComponent;
 class UInputAction;
 class UInputMappingContext;
-class USpringArmComponent;
 struct FInputActionInstance;
-class USceneComponent;
-
-DECLARE_LOG_CATEGORY_EXTERN(LogCameraPawn, Log, All);
 
 /**
- * Lightweight top-down orbit camera pawn intended for RTS-style controls.
- * Supports 360 degree orbit, cursor-focused zoom, and planar pan without relying on Tick.
- * Runtime never throws C++ exceptions; guards bail out early instead per UE guidance.
+ * Specialized camera pawn for simulation controls.
+ * Implements RTS-style camera controls (Zoom, Orbit, Pan).
  */
 UCLASS()
-class SIMULATIONCAMERACONTROL_API ACameraPawn : public APawn
+class SIMULATIONCAMERACONTROL_API ASimulationCameraControl : public APawn
 {
 	GENERATED_BODY()
 
 public:
-	ACameraPawn();
+	ASimulationCameraControl();
 
 	//~ Begin APawn Interface
 	virtual void BeginPlay() override;
@@ -58,12 +54,12 @@ public:
 
 	/**
 	 * Pans the pawn in world X/Y based on camera yaw so controls remain screen-relative.
-	 * Suggested bindings: WASD atau middle-mouse drag; expects continuous IA_* Triggered events.
+	 * Suggested bindings: WASD or middle-mouse drag; expects continuous IA_* Triggered events.
 	 */
 	UFUNCTION(BlueprintCallable, Category = "Camera|Input")
 	void Pan(FVector2D AxisValue);
 
-	//Setter BP-callable agar node “Set …” muncul di Blueprint
+	//Setter BP-callable
 	UFUNCTION(BlueprintCallable, Category="Camera|Input")
 	void SetDefaultInputMapping(UInputMappingContext* InContext);
 	UFUNCTION(BlueprintCallable, Category="Camera|Input")
@@ -142,21 +138,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Input", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UInputMappingContext> DefaultInputMapping;
 
-	/** Soft path used when DefaultInputMapping is null. Example: /Game/Input/IMC_CameraPawn.IMC_CameraPawn */
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Camera|Input", meta = (AllowPrivateAccess = "true"))
-	FSoftObjectPath DefaultInputMappingPath;
-
 	/** Name of the Enhanced Input action driving Zoom(float). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Input")
 	FName ZoomActionName = "IA_Zoom";
 
 	/** Name of the Enhanced Input action driving Orbit(FVector2D). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Input")
 	FName OrbitActionName = "IA_Orbit";
 
+	/** Name of the Enhanced Input action driving Orbit Modifier (bool). */
+	FName OrbitModifierActionName = "IA_Orbit_Modifier";
+
 	/** Name of the Enhanced Input action driving Pan(FVector2D). */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Input")
 	FName PanActionName = "IA_Pan";
+
+	/** Name of the Enhanced Input action driving Pan Modifier (bool). */
+	FName PanModifierActionName = "IA_Pan_Modifier";
 
 	/** Priority applied when registering the mapping context; higher values win conflicts. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Camera|Input", meta = (ClampMin = "0"))
@@ -175,21 +170,30 @@ private:
 	/** Registers DefaultInputMapping with the local player's Enhanced Input subsystem. */
 	void InitializeInputMapping();
 
-	/** Ensures mapping context and input actions are loaded (from pointers or soft paths). */
-	bool ResolveInputAssets();
-
 	/** Wrapper pulling float axis from Enhanced Input action and forwarding to Zoom. */
 	void HandleZoomAction(const FInputActionInstance& Instance);
 
 	/** Wrapper pulling 2D axis from Enhanced Input action and forwarding to Orbit. */
 	void HandleOrbitAction(const FInputActionInstance& Instance);
 
+	/** Wrapper tracking Orbit Modifier state. */
+	void HandleOrbitModifierAction(const FInputActionInstance& Instance);
+
 	/** Wrapper pulling 2D axis from Enhanced Input action and forwarding to Pan. */
 	void HandlePanAction(const FInputActionInstance& Instance);
 
+	/** Wrapper tracking Pan Modifier state. */
+	void HandlePanModifierAction(const FInputActionInstance& Instance);
+
 	/** Cached focus location to smooth zoom operations. */
-FVector LastValidHitLocation = FVector::ZeroVector;
+	FVector LastValidHitLocation = FVector::ZeroVector;
 
 	/** Tracks whether LastValidHitLocation is initialized. */
 	bool bHasCachedFocus = false;
+
+	/** Tracks whether the Orbit Modifier (Right Mouse) is held down. */
+	bool bIsOrbitModifierDown = false;
+
+	/** Tracks whether the Pan Modifier (Middle Mouse) is held down. */
+	bool bIsPanModifierDown = false;
 };

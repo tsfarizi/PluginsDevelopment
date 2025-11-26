@@ -1,6 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "SimulationCameraControl.h"
+#include "SimulationCameraControlModule.h"
 
 #define LOCTEXT_NAMESPACE "FSimulationCameraControlModule"
 
