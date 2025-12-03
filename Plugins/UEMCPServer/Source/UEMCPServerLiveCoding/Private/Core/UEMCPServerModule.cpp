@@ -10,7 +10,7 @@
 #include "Misc/ConfigCacheIni.h"
 #include "Modules/ModuleManager.h"
 
-DEFINE_LOG_CATEGORY(LogUEMCPServer);
+#include "Modules/ModuleManager.h"
 
 namespace UEMCPServer
 {

@@ -3,6 +3,8 @@
 #include "CoreMinimal.h"
 #include "UEMCPServerLiveCodingTypes.h"
 
+#include "IUEMCPServerLiveCodingProvider.h"
+
 #include "HAL/CriticalSection.h"
 #include "Templates/Atomic.h"
 
@@ -13,7 +15,7 @@ class FUEMCPServerLiveCodingLogCapture;
 /**
  * Owns the Live Coding compile flow and maintains the latest log snapshot.
  */
-class FUEMCPServerLiveCodingManager
+class FUEMCPServerLiveCodingManager : public IUEMCPServerLiveCodingProvider
 {
 public:
 	FUEMCPServerLiveCodingManager();
@@ -23,15 +25,13 @@ public:
 	void Shutdown();
 
 	/** Attempts to begin a compile; returns false if one is already running or setup failed. */
-	bool TryBeginCompile(FString& OutErrorMessage);
+	virtual bool TryBeginCompile(FString& OutErrorMessage) override;
 
 	/** Executes the Live Coding compile synchronously. Must be called on the game thread. */
-	void ExecuteCompileOnGameThread();
+	virtual void ExecuteCompileOnGameThread() override;
 
 	/** Retrieves the latest compile snapshot and status information. */
-	void GetLastCompileSnapshot(TArray<FUEMCPServerLogEntry>& OutEntries, FDateTime& OutTimestamp, ELiveCodingCompileResult& OutResult, bool& bOutHasResult, FString& OutErrorMessage, bool& bOutIsInProgress) const;
-
-	static FString CompileResultToString(ELiveCodingCompileResult CompileResult);
+	virtual void GetLastCompileSnapshot(TArray<FUEMCPServerLogEntry>& OutEntries, FDateTime& OutTimestamp, ELiveCodingCompileResult& OutResult, bool& bOutHasResult, FString& OutErrorMessage, bool& bOutIsInProgress) const override;
 
 private:
 	bool EnsureCaptureAvailable(FString& OutErrorMessage);

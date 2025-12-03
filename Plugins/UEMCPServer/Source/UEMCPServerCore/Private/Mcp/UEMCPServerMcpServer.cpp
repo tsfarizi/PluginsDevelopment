@@ -1,7 +1,7 @@
 #include "Mcp/UEMCPServerMcpServer.h"
 
 #include "Mcp/UEMCPServerMcpSession.h"
-#include "LiveCoding/UEMCPServerLiveCodingManager.h"
+#include "IUEMCPServerLiveCodingProvider.h"
 #include "UEMCPServerLog.h"
 
 #include "HttpPath.h"
@@ -33,126 +33,14 @@ namespace UEMCPServer
 	static constexpr const TCHAR* ProtocolVersionValue = TEXT("2025-06-18");
 }
 
+#include "Mcp/UEMCPServerHttpUtils.h"
+
 namespace
 {
-	FString RequestBodyToString(const FHttpServerRequest& Request)
-	{
-		if (Request.Body.IsEmpty())
-		{
-			return FString();
-		}
 
-		const ANSICHAR* Utf8Data = reinterpret_cast<const ANSICHAR*>(Request.Body.GetData());
-		FUTF8ToTCHAR Converter(Utf8Data, Request.Body.Num());
-		return FString(Converter.Length(), Converter.Get());
-	}
-
-	FString PeerEndpointString(const TSharedPtr<FInternetAddr>& PeerAddress)
-	{
-		return PeerAddress.IsValid() ? PeerAddress->ToString(true) : FString(TEXT("unknown"));
-	}
-
-bool ContainsToken(const FString& Source, const FString& Token)
-{
-	TArray<FString> Parts;
-	Source.ParseIntoArray(Parts, TEXT(","), true);
-	for (FString& Part : Parts)
-	{
-		Part.TrimStartAndEndInline();
-		FString TokenPart;
-		FString Remainder;
-		if (Part.Split(TEXT(";"), &TokenPart, &Remainder))
-		{
-			TokenPart.TrimEndInline();
-		}
-		else
-		{
-			TokenPart = Part;
-		}
-
-		if (TokenPart.Equals(Token, ESearchCase::IgnoreCase))
-		{
-			return true;
-		}
-
-		if (TokenPart.Equals(TEXT("*/*"), ESearchCase::IgnoreCase))
-		{
-			return true;
-		}
-
-		int32 SlashIndexCandidate = INDEX_NONE;
-		int32 SlashIndexTarget = INDEX_NONE;
-		if (TokenPart.FindChar(TEXT('/'), SlashIndexCandidate) && Token.FindChar(TEXT('/'), SlashIndexTarget))
-		{
-			const FString CandidateType = TokenPart.Left(SlashIndexCandidate);
-			const FString CandidateSubType = TokenPart.Mid(SlashIndexCandidate + 1);
-			const FString TargetType = Token.Left(SlashIndexTarget);
-			const FString TargetSubType = Token.Mid(SlashIndexTarget + 1);
-
-			if (CandidateType.Equals(TargetType, ESearchCase::IgnoreCase) && CandidateSubType.Equals(TEXT("*"), ESearchCase::IgnoreCase))
-			{
-				return true;
-			}
-
-			if (CandidateType.Equals(TEXT("*"), ESearchCase::IgnoreCase) && CandidateSubType.Equals(TargetSubType, ESearchCase::IgnoreCase))
-			{
-				return true;
-			}
-		}
-
-		if (TokenPart.Equals(TEXT("*"), ESearchCase::IgnoreCase))
-		{
-			return true;
-		}
-	}
-	return false;
-	}
-
-	TSharedPtr<FJsonObject> ParseJsonObject(const FString& Body)
-	{
-		TSharedPtr<FJsonObject> Object;
-		TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Body);
-		if (FJsonSerializer::Deserialize(Reader, Object) && Object.IsValid())
-		{
-			return Object;
-	}
-	return nullptr;
-	}
-
-	FString MakeLogContext(const TCHAR* Phase, const FString& Endpoint, const FGuid& SessionId, const FString& Method, const FString& Accept)
-	{
-		const FString SessionString = SessionId.IsValid() ? SessionId.ToString(EGuidFormats::DigitsWithHyphens) : FString(TEXT("<none>"));
-		const FString EndpointString = Endpoint.IsEmpty() ? FString(TEXT("unknown")) : Endpoint;
-		const FString MethodString = Method.IsEmpty() ? FString(TEXT("<none>")) : Method;
-		const FString AcceptString = Accept.IsEmpty() ? FString(TEXT("<none>")) : Accept;
-		return FString::Printf(TEXT("%s endpoint=%s method=%s session=%s accept=%s"), Phase, *EndpointString, *MethodString, *SessionString, *AcceptString);
-	}
-
-	void AppendSseEvent(FString& Output, const FString& Message)
-	{
-		FString Normalized = Message;
-		Normalized.ReplaceInline(TEXT("\r\n"), TEXT("\n"));
-		Normalized.ReplaceInline(TEXT("\r"), TEXT("\n"));
-
-		TArray<FString> Lines;
-		Normalized.ParseIntoArrayLines(Lines);
-		if (Lines.IsEmpty())
-		{
-			Lines.Add(FString());
-		}
-
-		for (const FString& Line : Lines)
-		{
-			Output += TEXT("data: ");
-			Output += Line;
-			Output += TEXT("\n");
-		}
-
-		Output += TEXT("\n");
-	}
 }
 
-FUEMCPServerMcpServer::FUEMCPServerMcpServer(FUEMCPServerLiveCodingManager& InLiveCodingManager, uint32 InPort, const FString& InBindAddress)
+FUEMCPServerMcpServer::FUEMCPServerMcpServer(IUEMCPServerLiveCodingProvider& InLiveCodingManager, uint32 InPort, const FString& InBindAddress)
 	: LiveCodingManager(InLiveCodingManager)
 	, Port(InPort)
 	, BindAddress(InBindAddress)
@@ -266,50 +154,50 @@ void FUEMCPServerMcpServer::Stop()
 
 bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
-	const FString Body = RequestBodyToString(Request);
+	const FString Body = UEMCPServerHttpUtils::RequestBodyToString(Request);
 	if (Body.IsEmpty())
 	{
 		UE_LOG(LogUEMCPServer, Warning, TEXT("%s -> rejecting: empty body"),
-			*MakeLogContext(TEXT("POST"), PeerEndpointString(Request.PeerAddress), FGuid(), FString(), ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader)));
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), UEMCPServerHttpUtils::PeerEndpointString(Request.PeerAddress), FGuid(), FString(), UEMCPServerHttpUtils::ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader)));
 		OnComplete(FHttpServerResponse::Error(EHttpServerResponseCodes::BadRequest, TEXT("empty_body"), TEXT("Request body is required.")));
 		return true;
 	}
 
-	const FString ProtocolVersionHeaderValue = ExtractHeaderValue(Request.Headers, UEMCPServer::ProtocolVersionHeader);
+	const FString ProtocolVersionHeaderValue = UEMCPServerHttpUtils::ExtractHeaderValue(Request.Headers, UEMCPServer::ProtocolVersionHeader);
 	if (!ValidateProtocolVersion(ProtocolVersionHeaderValue))
 	{
 		UE_LOG(LogUEMCPServer, Warning, TEXT("%s -> rejecting: unsupported protocol %s"),
-			*MakeLogContext(TEXT("POST"), PeerEndpointString(Request.PeerAddress), FGuid(), FString(), ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader)),
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), UEMCPServerHttpUtils::PeerEndpointString(Request.PeerAddress), FGuid(), FString(), UEMCPServerHttpUtils::ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader)),
 			*ProtocolVersionHeaderValue);
 		OnComplete(FHttpServerResponse::Error(EHttpServerResponseCodes::BadRequest, TEXT("invalid_protocol_version"), TEXT("Unsupported MCP protocol version.")));
 		return true;
 	}
 
-	TSharedPtr<FJsonObject> JsonObject = ParseJsonObject(Body);
+	TSharedPtr<FJsonObject> JsonObject = UEMCPServerHttpUtils::ParseJsonObject(Body);
 	if (!JsonObject.IsValid())
 	{
 		UE_LOG(LogUEMCPServer, Warning, TEXT("%s -> rejecting: invalid JSON"),
-			*MakeLogContext(TEXT("POST"), PeerEndpointString(Request.PeerAddress), FGuid(), FString(), ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader)));
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), UEMCPServerHttpUtils::PeerEndpointString(Request.PeerAddress), FGuid(), FString(), UEMCPServerHttpUtils::ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader)));
 		OnComplete(FHttpServerResponse::Error(EHttpServerResponseCodes::BadRequest, TEXT("invalid_json"), TEXT("Failed to parse JSON-RPC payload.")));
 		return true;
 	}
 
-	const FString AcceptHeaderValue = ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader);
-	const bool bClientAcceptsJson = AcceptHeaderValue.IsEmpty() || ContainsToken(AcceptHeaderValue, UEMCPServer::ContentTypeJson);
-	const bool bClientAcceptsSse = ContainsToken(AcceptHeaderValue, UEMCPServer::ContentTypeEventStream);
+	const FString AcceptHeaderValue = UEMCPServerHttpUtils::ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader);
+	const bool bClientAcceptsJson = AcceptHeaderValue.IsEmpty() || UEMCPServerHttpUtils::ContainsToken(AcceptHeaderValue, UEMCPServer::ContentTypeJson);
+	const bool bClientAcceptsSse = UEMCPServerHttpUtils::ContainsToken(AcceptHeaderValue, UEMCPServer::ContentTypeEventStream);
 	if (!bClientAcceptsJson && !bClientAcceptsSse)
 	{
 		UE_LOG(LogUEMCPServer, Warning, TEXT("%s -> rejecting: unsupported Accept"),
-			*MakeLogContext(TEXT("POST"), PeerEndpointString(Request.PeerAddress), FGuid(), FString(), AcceptHeaderValue));
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), UEMCPServerHttpUtils::PeerEndpointString(Request.PeerAddress), FGuid(), FString(), AcceptHeaderValue));
 		OnComplete(FHttpServerResponse::Error(EHttpServerResponseCodes::NoneAcceptable, TEXT("unsupported_accept"), TEXT("Client must accept application/json or text/event-stream.")));
 		return true;
 	}
 
-	const FString Endpoint = PeerEndpointString(Request.PeerAddress);
+	const FString Endpoint = UEMCPServerHttpUtils::PeerEndpointString(Request.PeerAddress);
 
 	FGuid SessionId;
-	const FString SessionIdHeaderValue = ExtractHeaderValue(Request.Headers, UEMCPServer::SessionIdHeader);
-	const bool bHasSessionHeader = TryParseSessionId(SessionIdHeaderValue, SessionId);
+	const FString SessionIdHeaderValue = UEMCPServerHttpUtils::ExtractHeaderValue(Request.Headers, UEMCPServer::SessionIdHeader);
+	const bool bHasSessionHeader = UEMCPServerHttpUtils::TryParseSessionId(SessionIdHeaderValue, SessionId);
 
 	bool bIsInitializeRequest = false;
 	FString Method;
@@ -335,7 +223,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 		}
 		AssociateEndpointWithSession(Endpoint, SessionId);
 		UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> using header session"),
-			*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 	}
 	else if (bIsInitializeRequest)
 	{
@@ -343,7 +231,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 		if (Session.IsValid())
 		{
 			UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> initialize reuse endpoint session"),
-				*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+				*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 		}
 		if (!Session.IsValid())
 		{
@@ -352,7 +240,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 			{
 				AssociateEndpointWithSession(Endpoint, SessionId);
 				UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> initialize reuse default session"),
-					*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+					*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 			}
 		}
 
@@ -367,7 +255,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 		if (Session.IsValid())
 		{
 			UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> reuse endpoint session"),
-				*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+				*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 		}
 		if (!Session.IsValid())
 		{
@@ -376,14 +264,14 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 			{
 				AssociateEndpointWithSession(Endpoint, SessionId);
 				UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> request reuse default session"),
-					*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+					*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 			}
 		}
 
 		if (!Session.IsValid())
 		{
 			UE_LOG(LogUEMCPServer, Warning, TEXT("%s -> rejecting: session missing"),
-				*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+				*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 			OnComplete(FHttpServerResponse::Error(EHttpServerResponseCodes::BadRequest, TEXT("missing_session"), TEXT("Mcp-Session-Id header is required.")));
 			return true;
 		}
@@ -393,7 +281,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 	if (!Session->HandleMessage(Body, PendingMessages))
 	{
 		UE_LOG(LogUEMCPServer, Warning, TEXT("%s -> session processing error"),
-			*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 		OnComplete(FHttpServerResponse::Error(EHttpServerResponseCodes::ServerError, TEXT("session_error"), TEXT("Failed to process MCP message.")));
 		return true;
 	}
@@ -409,7 +297,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 		}
 		AcceptedResponse->Headers.Add(UEMCPServer::ProtocolVersionHeader, { UEMCPServer::ProtocolVersionValue });
 		UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> returning 202 Accepted"),
-			*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 		OnComplete(MoveTemp(AcceptedResponse));
 		return true;
 	}
@@ -424,7 +312,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 		}
 		Response->Headers.Add(UEMCPServer::ProtocolVersionHeader, { UEMCPServer::ProtocolVersionValue });
 		UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> returning JSON response"),
-			*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 		OnComplete(MoveTemp(Response));
 		return true;
 	}
@@ -432,7 +320,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 	if (!bClientAcceptsSse)
 	{
 		UE_LOG(LogUEMCPServer, Warning, TEXT("%s -> rejecting: SSE required for multi-message response"),
-			*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
+			*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue));
 		OnComplete(FHttpServerResponse::Error(EHttpServerResponseCodes::NoneAcceptable, TEXT("sse_required"), TEXT("Client must accept text/event-stream for multi-message responses.")));
 		return true;
 	}
@@ -441,7 +329,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 	SsePayload.Reserve(PendingMessages.Num() * 64);
 	for (const FString& Message : PendingMessages)
 	{
-		AppendSseEvent(SsePayload, Message);
+		UEMCPServerHttpUtils::AppendSseEvent(SsePayload, Message);
 	}
 
 	TUniquePtr<FHttpServerResponse> SseResponse = FHttpServerResponse::Create(SsePayload, UEMCPServer::ContentTypeEventStreamResponse);
@@ -452,7 +340,7 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 	}
 	SseResponse->Headers.Add(UEMCPServer::ProtocolVersionHeader, { UEMCPServer::ProtocolVersionValue });
 	UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> returning SSE (%d message(s))"),
-		*MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue),
+		*UEMCPServerHttpUtils::MakeLogContext(TEXT("POST"), Endpoint, SessionId, Method, AcceptHeaderValue),
 		PendingMessages.Num());
 	OnComplete(MoveTemp(SseResponse));
 	return true;
@@ -461,23 +349,23 @@ bool FUEMCPServerMcpServer::HandlePostRequest(const FHttpServerRequest& Request,
 bool FUEMCPServerMcpServer::HandleGetRequest(const FHttpServerRequest& Request, const FHttpResultCallback& OnComplete)
 {
 	FGuid SessionId;
-	const FString SessionIdHeaderValue = ExtractHeaderValue(Request.Headers, UEMCPServer::SessionIdHeader);
-	bool bHasSession = TryParseSessionId(SessionIdHeaderValue, SessionId);
+	const FString SessionIdHeaderValue = UEMCPServerHttpUtils::ExtractHeaderValue(Request.Headers, UEMCPServer::SessionIdHeader);
+	bool bHasSession = UEMCPServerHttpUtils::TryParseSessionId(SessionIdHeaderValue, SessionId);
 	if (!bHasSession)
 	{
 		if (const FString* QueryValue = Request.QueryParams.Find(TEXT("sessionId")))
 		{
-			bHasSession = TryParseSessionId(*QueryValue, SessionId);
+			bHasSession = UEMCPServerHttpUtils::TryParseSessionId(*QueryValue, SessionId);
 		}
 		else if (const FString* QueryValueLegacy = Request.QueryParams.Find(TEXT("session_id")))
 		{
-			bHasSession = TryParseSessionId(*QueryValueLegacy, SessionId);
+			bHasSession = UEMCPServerHttpUtils::TryParseSessionId(*QueryValueLegacy, SessionId);
 		}
 	}
 
 	TSharedPtr<FUEMCPServerMcpSession> Session;
-	const FString Endpoint = PeerEndpointString(Request.PeerAddress);
-	const FString AcceptHeaderValue = ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader);
+	const FString Endpoint = UEMCPServerHttpUtils::PeerEndpointString(Request.PeerAddress);
+	const FString AcceptHeaderValue = UEMCPServerHttpUtils::ExtractHeaderValue(Request.Headers, UEMCPServer::AcceptHeader);
 
 	if (bHasSession)
 	{
@@ -486,7 +374,7 @@ bool FUEMCPServerMcpServer::HandleGetRequest(const FHttpServerRequest& Request, 
 		{
 			AssociateEndpointWithSession(Endpoint, SessionId);
 			UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> GET SSE reuse session"),
-				*MakeLogContext(TEXT("GET"), Endpoint, SessionId, FString(), AcceptHeaderValue));
+				*UEMCPServerHttpUtils::MakeLogContext(TEXT("GET"), Endpoint, SessionId, FString(), AcceptHeaderValue));
 		}
 	}
 
@@ -504,7 +392,7 @@ bool FUEMCPServerMcpServer::HandleGetRequest(const FHttpServerRequest& Request, 
 	Response->Headers.Add(UEMCPServer::SessionIdHeader, { SessionId.ToString(EGuidFormats::DigitsWithHyphens) });
 	Response->Headers.Add(UEMCPServer::ProtocolVersionHeader, { UEMCPServer::ProtocolVersionValue });
 	UE_LOG(LogUEMCPServer, Verbose, TEXT("%s -> GET SSE %s"),
-		*MakeLogContext(TEXT("GET"), Endpoint, SessionId, FString(), AcceptHeaderValue),
+		*UEMCPServerHttpUtils::MakeLogContext(TEXT("GET"), Endpoint, SessionId, FString(), AcceptHeaderValue),
 		bCreatedSession ? TEXT("created new session") : TEXT("keep-alive"));
 	OnComplete(MoveTemp(Response));
 	return true;
@@ -611,32 +499,4 @@ void FUEMCPServerMcpServer::SetSessionOverrideConfig() const
 	GConfig->SetArray(UEMCPServer::HttpListenersSection, UEMCPServer::ListenerOverridesKey, Overrides, GEngineIni);
 }
 
-bool FUEMCPServerMcpServer::TryParseSessionId(const FString& RawValue, FGuid& OutSessionId)
-{
-	if (RawValue.IsEmpty())
-	{
-		return false;
-	}
 
-	return FGuid::Parse(RawValue, OutSessionId);
-}
-
-FString FUEMCPServerMcpServer::ExtractHeaderValue(const TMap<FString, TArray<FString>>& Headers, const FString& HeaderName)
-{
-	for (const TPair<FString, TArray<FString>>& Pair : Headers)
-	{
-		if (!Pair.Key.Equals(HeaderName, ESearchCase::IgnoreCase))
-		{
-			continue;
-		}
-
-		for (const FString& Value : Pair.Value)
-		{
-			if (!Value.IsEmpty())
-			{
-				return Value;
-			}
-		}
-	}
-	return FString();
-}

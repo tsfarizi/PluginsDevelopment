@@ -7,14 +7,16 @@
 #include "HttpServerRequest.h"
 #include "Misc/Guid.h"
 
-class FUEMCPServerLiveCodingManager;
+class IUEMCPServerLiveCodingProvider;
 class FUEMCPServerMcpSession;
 class IHttpRouter;
 
-class FUEMCPServerMcpServer
+class IHttpRouter;
+
+class UEMCPSERVERCORE_API FUEMCPServerMcpServer
 {
 public:
-	FUEMCPServerMcpServer(FUEMCPServerLiveCodingManager& InLiveCodingManager, uint32 InPort, const FString& InBindAddress);
+	FUEMCPServerMcpServer(IUEMCPServerLiveCodingProvider& InLiveCodingManager, uint32 InPort, const FString& InBindAddress);
 	~FUEMCPServerMcpServer();
 
 	bool Start();
@@ -30,10 +32,9 @@ private:
 	void AssociateEndpointWithSession(const FString& Endpoint, const FGuid& SessionId);
 	bool ValidateProtocolVersion(const FString& ProtocolVersionHeader) const;
 	void SetSessionOverrideConfig() const;
-	static bool TryParseSessionId(const FString& RawValue, FGuid& OutSessionId);
-	static FString ExtractHeaderValue(const TMap<FString, TArray<FString>>& Headers, const FString& HeaderName);
 
-	FUEMCPServerLiveCodingManager& LiveCodingManager;
+
+	IUEMCPServerLiveCodingProvider& LiveCodingManager;
 	uint32 Port;
 	FString BindAddress;
 	FString EndpointPath;

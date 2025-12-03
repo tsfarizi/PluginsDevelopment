@@ -1,6 +1,6 @@
 #include "Mcp/UEMCPServerMcpSession.h"
-
-#include "LiveCoding/UEMCPServerLiveCodingManager.h"
+#include "Mcp/UEMCPServerMcpSchema.h"
+#include "IUEMCPServerLiveCodingProvider.h"
 #include "UEMCPServerLiveCodingTypes.h"
 #include "UEMCPServerLog.h"
 
@@ -32,11 +32,11 @@ namespace
 	constexpr int32 JsonRpcInvalidRequest = -32600;
 	constexpr int32 JsonRpcMethodNotFound = -32601;
 	constexpr int32 JsonRpcInvalidParams = -32602;
-	constexpr int32 JsonRpcServerError = -32002;
+	constexpr int32 JsonRpcInternalError = -32603;
+	constexpr int32 JsonRpcServerError = -32000;
 }
 
-
-FUEMCPServerMcpSession::FUEMCPServerMcpSession(FUEMCPServerLiveCodingManager& InLiveCodingManager, const FGuid& InClientId, FString InEndpoint)
+FUEMCPServerMcpSession::FUEMCPServerMcpSession(IUEMCPServerLiveCodingProvider& InLiveCodingManager, const FGuid& InClientId, FString InEndpoint)
 	: LiveCodingManager(InLiveCodingManager)
 	, ClientId(InClientId)
 	, Endpoint(MoveTemp(InEndpoint))
@@ -176,7 +176,7 @@ void FUEMCPServerMcpSession::RespondInitialize(const TSharedPtr<FJsonValue>& IdV
 void FUEMCPServerMcpSession::RespondToolsList(const TSharedPtr<FJsonValue>& IdValue)
 {
 	TArray<TSharedPtr<FJsonValue>> Tools;
-	PopulateToolsList(Tools);
+	UEMCPServerMcpSchema::PopulateToolsList(Tools);
 
 	TSharedRef<FJsonObject> Result = MakeShared<FJsonObject>();
 	Result->SetArrayField(TEXT("tools"), Tools);
@@ -242,10 +242,13 @@ void FUEMCPServerMcpSession::HandleCompileTool(const TSharedPtr<FJsonValue>& IdV
 
 	SendToolResult(IdValue, StatusMessage, Structured, false);
 
-	FUEMCPServerLiveCodingManager* ManagerPtr = &LiveCodingManager;
-	AsyncTask(ENamedThreads::GameThread, [ManagerPtr]()
+	FUEMCPServerMcpSession* SessionPtr = this;
+	AsyncTask(ENamedThreads::GameThread, [SessionPtr]()
 	{
-		ManagerPtr->ExecuteCompileOnGameThread();
+		if (SessionPtr)
+		{
+			SessionPtr->LiveCodingManager.ExecuteCompileOnGameThread();
+		}
 	});
 
 	const FString ClientIdString = ClientId.ToString();
@@ -368,7 +371,7 @@ TSharedRef<FJsonObject> FUEMCPServerMcpSession::BuildLiveCodingStatus(FString& O
 	LiveCodingManager.GetLastCompileSnapshot(LogSnapshot, SnapshotTimestamp, SnapshotResult, bHasSnapshotResult, SnapshotError, bInProgress);
 
 	TSharedRef<FJsonObject> Status = MakeShared<FJsonObject>();
-	const FString ResultString = FUEMCPServerLiveCodingManager::CompileResultToString(SnapshotResult);
+	const FString ResultString = UEMCPServer::CompileResultToString(SnapshotResult);
 
 	Status->SetStringField(TEXT("status"), SnapshotError.IsEmpty() ? TEXT("ok") : TEXT("error"));
 	Status->SetStringField(TEXT("compileResult"), ResultString);
@@ -415,118 +418,3 @@ TSharedRef<FJsonObject> FUEMCPServerMcpSession::BuildLiveCodingStatus(FString& O
 
 	return Status;
 }
-
-TSharedRef<FJsonObject> FUEMCPServerMcpSession::BuildToolInputSchema(bool bIncludeWaitFlag) const
-{
-	TSharedRef<FJsonObject> Schema = MakeShared<FJsonObject>();
-	Schema->SetStringField(TEXT("type"), TEXT("object"));
-
-	TSharedPtr<FJsonObject> Properties = MakeShared<FJsonObject>();
-	if (bIncludeWaitFlag)
-	{
-		TSharedRef<FJsonObject> WaitProp = MakeShared<FJsonObject>();
-		WaitProp->SetStringField(TEXT("type"), TEXT("boolean"));
-		WaitProp->SetStringField(TEXT("description"), TEXT("Reserved for future use. When true, the server will wait for the compile to finish before responding."));
-		Properties->SetObjectField(TEXT("waitForCompletion"), WaitProp);
-	}
-	Schema->SetObjectField(TEXT("properties"), Properties);
-	Schema->SetBoolField(TEXT("additionalProperties"), false);
-
-	return Schema;
-}
-
-TSharedRef<FJsonObject> FUEMCPServerMcpSession::BuildLiveCodingOutputSchema() const
-{
-	TSharedRef<FJsonObject> Schema = MakeShared<FJsonObject>();
-	Schema->SetStringField(TEXT("type"), TEXT("object"));
-
-	TSharedPtr<FJsonObject> Properties = MakeShared<FJsonObject>();
-
-	auto MakeStringProperty = [](const FString& Description)
-	{
-		TSharedRef<FJsonObject> Prop = MakeShared<FJsonObject>();
-		Prop->SetStringField(TEXT("type"), TEXT("string"));
-		if (!Description.IsEmpty())
-		{
-			Prop->SetStringField(TEXT("description"), Description);
-		}
-		return Prop;
-	};
-
-	auto MakeBooleanProperty = [](const FString& Description)
-	{
-		TSharedRef<FJsonObject> Prop = MakeShared<FJsonObject>();
-		Prop->SetStringField(TEXT("type"), TEXT("boolean"));
-		if (!Description.IsEmpty())
-		{
-			Prop->SetStringField(TEXT("description"), Description);
-		}
-		return Prop;
-	};
-
-	Properties->SetObjectField(TEXT("status"), MakeStringProperty(TEXT("High-level status of the call (ok, error, etc.).")));
-	Properties->SetObjectField(TEXT("message"), MakeStringProperty(TEXT("Human-readable summary of the snapshot.")));
-	Properties->SetObjectField(TEXT("compileResult"), MakeStringProperty(TEXT("Final Live Coding compile result.")));
-	Properties->SetObjectField(TEXT("compileInProgress"), MakeBooleanProperty(TEXT("True if a compile is currently running.")));
-	Properties->SetObjectField(TEXT("hasPreviousResult"), MakeBooleanProperty(TEXT("True if a previous compile result is available.")));
-	Properties->SetObjectField(TEXT("compileStarted"), MakeBooleanProperty(TEXT("True if the request queued a new compile.")));
-	Properties->SetObjectField(TEXT("timestampUtc"), MakeStringProperty(TEXT("UTC timestamp of the snapshot when available.")));
-
-	TSharedRef<FJsonObject> LogItems = MakeShared<FJsonObject>();
-	LogItems->SetStringField(TEXT("type"), TEXT("object"));
-	TSharedPtr<FJsonObject> LogProperties = MakeShared<FJsonObject>();
-	LogProperties->SetObjectField(TEXT("timeUtc"), MakeStringProperty(TEXT("Timestamp of the log entry in UTC.")));
-	LogProperties->SetObjectField(TEXT("category"), MakeStringProperty(TEXT("Log category.")));
-	LogProperties->SetObjectField(TEXT("verbosity"), MakeStringProperty(TEXT("Verbosity string.")));
-	LogProperties->SetObjectField(TEXT("message"), MakeStringProperty(TEXT("Log message text.")));
-	LogItems->SetObjectField(TEXT("properties"), LogProperties);
-	LogItems->SetBoolField(TEXT("additionalProperties"), false);
-
-	TSharedRef<FJsonObject> LogArray = MakeShared<FJsonObject>();
-	LogArray->SetStringField(TEXT("type"), TEXT("array"));
-	LogArray->SetObjectField(TEXT("items"), LogItems);
-	Properties->SetObjectField(TEXT("log"), LogArray);
-
-	Schema->SetObjectField(TEXT("properties"), Properties);
-
-	TArray<TSharedPtr<FJsonValue>> Required;
-	Required.Add(MakeShared<FJsonValueString>(TEXT("status")));
-	Required.Add(MakeShared<FJsonValueString>(TEXT("message")));
-	Required.Add(MakeShared<FJsonValueString>(TEXT("compileResult")));
-	Required.Add(MakeShared<FJsonValueString>(TEXT("compileInProgress")));
-	Schema->SetArrayField(TEXT("required"), Required);
-	Schema->SetBoolField(TEXT("additionalProperties"), true);
-
-	return Schema;
-}
-
-void FUEMCPServerMcpSession::PopulateToolsList(TArray<TSharedPtr<FJsonValue>>& OutTools) const
-{
-	TSharedRef<FJsonObject> CompileTool = MakeShared<FJsonObject>();
-	CompileTool->SetStringField(TEXT("name"), UEMCPServer::Mcp::CompileToolName);
-	CompileTool->SetStringField(TEXT("description"), TEXT("Trigger a UE Live Coding compile and return the latest compile snapshot."));
-	CompileTool->SetObjectField(TEXT("inputSchema"), BuildToolInputSchema(true));
-	CompileTool->SetObjectField(TEXT("outputSchema"), BuildLiveCodingOutputSchema());
-	TSharedPtr<FJsonObject> CompileAnnotations = MakeShared<FJsonObject>();
-	CompileAnnotations->SetBoolField(TEXT("destructiveHint"), false);
-	CompileAnnotations->SetBoolField(TEXT("readOnlyHint"), false);
-	CompileAnnotations->SetStringField(TEXT("title"), TEXT("Trigger Live Coding Compile"));
-	CompileTool->SetObjectField(TEXT("annotations"), CompileAnnotations);
-	OutTools.Add(MakeShared<FJsonValueObject>(CompileTool));
-
-	TSharedRef<FJsonObject> StatusTool = MakeShared<FJsonObject>();
-	StatusTool->SetStringField(TEXT("name"), UEMCPServer::Mcp::StatusToolName);
-	StatusTool->SetStringField(TEXT("description"), TEXT("Return the most recent Live Coding compile snapshot without starting a new compile."));
-	StatusTool->SetObjectField(TEXT("inputSchema"), BuildToolInputSchema(false));
-	StatusTool->SetObjectField(TEXT("outputSchema"), BuildLiveCodingOutputSchema());
-	TSharedPtr<FJsonObject> StatusAnnotations = MakeShared<FJsonObject>();
-	StatusAnnotations->SetBoolField(TEXT("destructiveHint"), false);
-	StatusAnnotations->SetBoolField(TEXT("readOnlyHint"), true);
-	StatusAnnotations->SetStringField(TEXT("title"), TEXT("Get Live Coding Status"));
-	StatusTool->SetObjectField(TEXT("annotations"), StatusAnnotations);
-	OutTools.Add(MakeShared<FJsonValueObject>(StatusTool));
-}
-
-
-
-

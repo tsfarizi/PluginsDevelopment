@@ -36,7 +36,8 @@ public class UEMCPServerLiveCoding : ModuleRules
                 "InteractiveToolsFramework",
                 "EditorInteractiveToolsFramework",
                 "LiveCoding",
-                "HTTPServer"
+                "HTTPServer",
+                "UEMCPServerCore"
             }
         );
     }

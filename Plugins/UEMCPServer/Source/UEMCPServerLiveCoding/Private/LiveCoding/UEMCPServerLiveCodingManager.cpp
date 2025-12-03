@@ -144,28 +144,7 @@ void FUEMCPServerLiveCodingManager::GetLastCompileSnapshot(TArray<FUEMCPServerLo
 	bOutIsInProgress = bCompileInProgress.Load();
 }
 
-FString FUEMCPServerLiveCodingManager::CompileResultToString(ELiveCodingCompileResult CompileResult)
-{
-	switch (CompileResult)
-	{
-	case ELiveCodingCompileResult::Success:
-		return TEXT("Success");
-	case ELiveCodingCompileResult::NoChanges:
-		return TEXT("NoChanges");
-	case ELiveCodingCompileResult::InProgress:
-		return TEXT("InProgress");
-	case ELiveCodingCompileResult::CompileStillActive:
-		return TEXT("CompileStillActive");
-	case ELiveCodingCompileResult::NotStarted:
-		return TEXT("NotStarted");
-	case ELiveCodingCompileResult::Failure:
-		return TEXT("Failure");
-	case ELiveCodingCompileResult::Cancelled:
-		return TEXT("Cancelled");
-	default:
-		return TEXT("Unknown");
-	}
-}
+
 
 bool FUEMCPServerLiveCodingManager::EnsureCaptureAvailable(FString& OutErrorMessage)
 {

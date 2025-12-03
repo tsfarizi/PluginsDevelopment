@@ -5,12 +5,12 @@
 
 class FJsonObject;
 class FJsonValue;
-class FUEMCPServerLiveCodingManager;
+class IUEMCPServerLiveCodingProvider;
 
 class FUEMCPServerMcpSession : public TSharedFromThis<FUEMCPServerMcpSession>
 {
 public:
-	FUEMCPServerMcpSession(FUEMCPServerLiveCodingManager& InLiveCodingManager, const FGuid& InClientId, FString InEndpoint);
+	FUEMCPServerMcpSession(IUEMCPServerLiveCodingProvider& InLiveCodingManager, const FGuid& InClientId, FString InEndpoint);
 
 	bool HandleMessage(const FString& Message, TArray<FString>& OutgoingMessages);
 	void HandleClosed();
@@ -37,12 +37,9 @@ private:
 
 	TArray<TSharedPtr<FJsonValue>> MakeTextContentArray(const FString& MessageText) const;
 	TSharedRef<FJsonObject> BuildLiveCodingStatus(FString& OutMessage) const;
-	TSharedRef<FJsonObject> BuildToolInputSchema(bool bIncludeWaitFlag) const;
-	TSharedRef<FJsonObject> BuildLiveCodingOutputSchema() const;
-	void PopulateToolsList(TArray<TSharedPtr<FJsonValue>>& OutTools) const;
 
 private:
-	FUEMCPServerLiveCodingManager& LiveCodingManager;
+	IUEMCPServerLiveCodingProvider& LiveCodingManager;
 	FGuid ClientId;
 	FString Endpoint;
 	bool bInitialized;
